@@ -197,6 +197,48 @@ FOLLOW(B) = { $, or }
 ⟹ NO CONFLICT  QED
 ```
 
+#### Sample Parse Tree (G1T — input: `true and false or id`)
+
+```
+B
+├── T
+│   ├── F  →  "true"
+│   └── T'
+│       ├── "and"
+│       ├── F  →  "false"
+│       └── T'  →  ε
+└── B'
+    ├── "or"
+    ├── T
+    │   ├── F  →  "id"
+    │   └── T'  →  ε
+    └── B'  →  ε
+```
+
+Operator precedence is structurally encoded: `and` groups `true` and `false` under T before `or` combines at the B level. Exactly one parse tree exists — the grammar is unambiguous.
+
+#### LL(1) Parse Trace (G1T — input: `true and false or id`)
+
+| Step | Stack (top→right) | Input Remaining | Action |
+|------|-------------------|-----------------|--------|
+| 1 | `$ B` | `true and false or id $` | Predict B → T B' |
+| 2 | `$ B' T` | `true and false or id $` | Predict T → F T' |
+| 3 | `$ B' T' F` | `true and false or id $` | Predict F → true |
+| 4 | `$ B' T' true` | `true and false or id $` | Match **true** |
+| 5 | `$ B' T'` | `and false or id $` | Predict T' → and F T' |
+| 6 | `$ B' T' F and` | `and false or id $` | Match **and** |
+| 7 | `$ B' T' F` | `false or id $` | Predict F → false |
+| 8 | `$ B' T' false` | `false or id $` | Match **false** |
+| 9 | `$ B' T'` | `or id $` | Predict T' → ε |
+| 10 | `$ B'` | `or id $` | Predict B' → or T B' |
+| 11 | `$ B' T or` | `or id $` | Match **or** |
+| 12 | `$ B' T` | `id $` | Predict T → F T' |
+| 13 | `$ B' T' F` | `id $` | Predict F → id |
+| 14 | `$ B' T' id` | `id $` | Match **id** |
+| 15 | `$ B' T'` | `$` | Predict T' → ε |
+| 16 | `$ B'` | `$` | Predict B' → ε |
+| 17 | `$` | `$` | **Accept** |
+
 ---
 
 ### 2.2 G2 — Dangling-Else
@@ -295,6 +337,42 @@ Shift 'e' also wants 'e'.
 
 **Disambiguation**: The "prefer shift over reduce on 'e'" convention (standard in C/Java) corresponds to Tree 2, i.e., else matches the nearest unmatched if. This is implemented as a tie-breaking rule in LALR(1) generators (Bison, YACC).
 
+#### Parse Tree Diagrams — Ambiguity Illustration (G2 — input: `i b t i b t a e a`)
+
+**Parse Tree 1** — else matches the **outer** if (non-standard):
+
+```
+S
+├── i
+├── E  →  b
+├── t
+├── S  (inner if — no else)
+│   ├── i
+│   ├── E  →  b
+│   ├── t
+│   └── S  →  a
+├── e
+└── S  →  a
+```
+
+**Parse Tree 2** — else matches the **inner** if (C/Java convention, selected by "prefer shift"):
+
+```
+S
+├── i
+├── E  →  b
+├── t
+└── S
+    ├── i
+    ├── E  →  b
+    ├── t
+    ├── S  →  a
+    ├── e
+    └── S  →  a
+```
+
+Both trees derive the identical token sequence from the same start symbol S. Since one input string produces two structurally distinct parse trees, the grammar is **inherently ambiguous**. No grammar transformation can remove this ambiguity while preserving the language.
+
 ---
 
 ### 2.3 G3 — Comma-Separated List
@@ -363,6 +441,34 @@ The only reduce state contains `L → id •` or `L → L , id •` — each is 
 | SLR(1)    | **PASS**  | LR(0) already conflict-free; SLR trivially passes       |
 | LR(1)     | **PASS**  | LR(0) passes ⟹ LR(1) passes (LR(0) ⊂ LR(1))           |
 | LALR(1)   | **PASS**  | No LR(1) states to merge; passes trivially              |
+
+#### LR(0) Shift/Reduce Trace (G3 — input: `id , id`)
+
+| Step | Stack | Input Remaining | Action |
+|------|-------|-----------------|--------|
+| 1 | `0` | `id , id $` | Shift **id** → state 2 |
+| 2 | `0 id[2]` | `, id $` | Reduce L → id; GOTO L[0] → state 1 |
+| 3 | `0 L[1]` | `, id $` | Shift **,** → state 3 |
+| 4 | `0 L[1] ,[3]` | `id $` | Shift **id** → state 4 |
+| 5 | `0 L[1] ,[3] id[4]` | `$` | Reduce L → L , id; GOTO L[0] → state 1 |
+| 6 | `0 L[1]` | `$` | **Accept** |
+
+Each reduce state contains exactly one complete item with no competing shift item on the same terminal — confirming zero conflicts across all 5 LR(0) states.
+
+#### Parse Tree (G3 — input: `id , id , id`)
+
+```
+L
+├── L
+│   ├── L
+│   │   └── id
+│   ├── ","
+│   └── id
+├── ","
+└── id
+```
+
+Left-associative structure: each `,` binds the accumulated list on the left with the next `id` on the right, matching the original left-recursive grammar.
 
 ---
 
@@ -446,6 +552,39 @@ FOLLOW(Args) = { ')', ',' }
 | SLR(1)    | **PASS**  | 'id' ∉ FOLLOW(Args)={),','} ⟹ reduce blocked             |
 | LR(1)     | **PASS**  | Per-item lookaheads on Args→eps are {')',','} only         |
 | LALR(1)   | **PASS**  | No R/R conflicts on merging LR(1) states                  |
+
+#### Sample LL(1) Parse Trace (G4T — input: `id ( id , id )`)
+
+| Step | Stack (top→right) | Input Remaining | Action |
+|------|-------------------|-----------------|--------|
+| 1 | `$ S` | `id ( id , id ) $` | Predict S → id ( Args ) |
+| 2 | `$ ) Args ( id` | `id ( id , id ) $` | Match **id** |
+| 3 | `$ ) Args (` | `( id , id ) $` | Match **(** |
+| 4 | `$ ) Args` | `id , id ) $` | Predict Args → id Args' |
+| 5 | `$ ) Args' id` | `id , id ) $` | Match **id** |
+| 6 | `$ ) Args'` | `, id ) $` | Predict Args' → , id Args' |
+| 7 | `$ ) Args' id ,` | `, id ) $` | Match **,** |
+| 8 | `$ ) Args' id` | `id ) $` | Match **id** |
+| 9 | `$ ) Args'` | `) $` | Predict Args' → ε |
+| 10 | `$ )` | `) $` | Match **)** |
+| 11 | `$` | `$` | **Accept** |
+
+#### Parse Tree (G4T — input: `id ( id , id )`)
+
+```
+S
+├── "id"   (function name)
+├── "("
+├── Args
+│   ├── "id"   (first argument)
+│   └── Args'
+│       ├── ","
+│       ├── "id"   (second argument)
+│       └── Args'  →  ε
+└── ")"
+```
+
+At step 9, lookahead `)` triggers `Args' → ε` because `)' ∈ FOLLOW(Args') = {`)`}`. This is the state where LR(0) would have incorrectly reduced `Args → eps` on `id` — confirming the SLR(1) resolution is necessary and correct.
 
 ---
 
@@ -553,6 +692,47 @@ Both conflicts resolved identically. SLR(1) PASSES.
 | SLR(1)    | **PASS**  | 'id' ∉ FOLLOW(StmtList)={$} ⟹ reduce blocked in both states  |
 | LR(1)     | **PASS**  | Per-item lookaheads on StmtList→eps are {$} only               |
 | LALR(1)   | **PASS**  | No R/R conflicts on merging; 14 states                          |
+
+#### Sample LL(1) Parse Trace (G5T — input: `id = id + num ;`)
+
+| Step | Stack (top→right) | Input Remaining | Action |
+|------|-------------------|-----------------|--------|
+| 1 | `$ S` | `id = id + num ; $` | Predict S → StmtList |
+| 2 | `$ StmtList` | `id = id + num ; $` | Predict StmtList → Stmt StmtList |
+| 3 | `$ StmtList Stmt` | `id = id + num ; $` | Predict Stmt → id = E ; |
+| 4 | `$ StmtList ; E = id` | `id = id + num ; $` | Match **id** |
+| 5 | `$ StmtList ; E =` | `= id + num ; $` | Match **=** |
+| 6 | `$ StmtList ; E` | `id + num ; $` | Predict E → T E' |
+| 7 | `$ StmtList ; E' T` | `id + num ; $` | Predict T → id |
+| 8 | `$ StmtList ; E' id` | `id + num ; $` | Match **id** |
+| 9 | `$ StmtList ; E'` | `+ num ; $` | Predict E' → + T E' |
+| 10 | `$ StmtList ; E' T +` | `+ num ; $` | Match **+** |
+| 11 | `$ StmtList ; E' T` | `num ; $` | Predict T → num |
+| 12 | `$ StmtList ; E' num` | `num ; $` | Match **num** |
+| 13 | `$ StmtList ; E'` | `; $` | Predict E' → ε |
+| 14 | `$ StmtList ;` | `; $` | Match **;** |
+| 15 | `$ StmtList` | `$` | Predict StmtList → ε |
+| 16 | `$` | `$` | **Accept** |
+
+#### Parse Tree (G5T — input: `id = id + num ;`)
+
+```
+S
+└── StmtList
+    ├── Stmt
+    │   ├── "id"   (variable)
+    │   ├── "="
+    │   ├── E
+    │   │   ├── T  →  "id"
+    │   │   └── E'
+    │   │       ├── "+"
+    │   │       ├── T  →  "num"
+    │   │       └── E'  →  ε
+    │   └── ";"
+    └── StmtList  →  ε
+```
+
+At step 13, lookahead `;` triggers `E' → ε` because `;` ∈ FOLLOW(E') = {`;`}. At step 15, lookahead `$` triggers `StmtList → ε` because `$` ∈ FOLLOW(StmtList) = {`$`} — exactly the condition exploited by SLR(1) to resolve the conflict in the original grammar.
 
 ---
 
